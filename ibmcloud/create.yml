@@ -1,0 +1,97 @@
+---
+- name: Deploy a RHEL8 Virtual Server Instance (VSI) in IBM Cloud
+  hosts: localhost
+  collections:
+   - ibm.cloudcollection
+  tasks:
+    - name: Fetch the variables from var file
+      include_vars:
+        file: vars.yml
+  
+    - name: Configure the Virtual Private Cloud (VPC)
+      ibm_is_vpc:
+        name: "{{ name_prefix }}-vpc"
+        state: available
+        id: "{{ vpc.id | default(omit) }}"
+      register: vpc_create_output
+
+    - name: Save VPC as fact
+      set_fact:
+        cacheable: True
+        vpc: "{{ vpc_create_output.resource }}"
+
+    - name: Configure VPC Subnet
+      ibm_is_subnet:
+        name: "{{ name_prefix }}-subnet"
+        state: available
+        id: "{{ subnet.id | default(omit) }}"
+        vpc: "{{ vpc.id }}"
+        ipv4_cidr_block: "{{ ipv4_cidr_block }}"
+        zone: "{{ zone }}"
+      register: subnet_create_output
+
+    - name: Save VPC Subnet as fact
+      set_fact:
+        cacheable: True
+        subnet: "{{ subnet_create_output.resource }}"
+
+    - name: Configure SSH Key
+      ibm_is_ssh_key:
+        name: "{{ name_prefix }}-ssh-key"
+        public_key: "{{ ssh_public_key }}"
+        id: "{{ ssh_key.id | default(omit) }}"
+      register: ssh_key_create_output
+
+    - name: Save SSH Key as fact
+      set_fact:
+        cacheable: True
+        ssh_key: "{{ ssh_key_create_output.resource }}"
+
+    - name: Configure VSI
+      ibm_is_instance:
+        name: "{{ name_prefix }}-vsi"
+        state: available
+        id: "{{ vsi.id | default(omit) }}"
+        vpc: "{{ vpc.id }}"
+        profile: "{{ vsi_profile }}"
+        image: "r006-d03af20b-0247-4a4f-b4ba-c6c13123a109"
+        keys:
+          - "{{ ssh_key.id }}"
+        primary_network_interface:
+          - subnet: "{{ subnet.id }}"
+        zone: "{{ zone }}"
+      register: vsi_create_output
+
+    - name: Save VSI as fact
+      set_fact:
+        cacheable: True
+        vsi: "{{ vsi_create_output.resource }}"
+
+    - name: Configure Floating IP Address
+      ibm_is_floating_ip:
+        name: "{{ name_prefix }}-fip"
+        state: available
+        id: "{{ fip.id | default(omit) }}"
+        target: "{{ vsi.primary_network_interface[0]['id'] }}"
+      register: fip_create_output
+
+    - name: Save Floating IP as fact
+      set_fact:
+        cacheable: True
+        fip: "{{ fip_create_output.resource }}"
+
+
+    - name: Configure Security Group Rule to open SSH on the RHEL8 VSI
+      ibm_is_security_group_rule:
+        state: available
+        group: "{{ vpc.default_security_group }}"
+        direction: inbound
+        remote: 0.0.0.0/0
+        tcp:
+          - port_max: 22
+            port_min: 22
+
+    - name: Print Floating IP Address
+      debug:
+        msg: "The RHEL8 VSI in available at the IP Address: {{ fip.address }}"
+

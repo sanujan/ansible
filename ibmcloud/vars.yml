@@ -1,0 +1,6 @@
+---
+name_prefix: rhel81
+vsi_profile: cx2-2x4
+ssh_public_key: <Your-SSH-Public-Key>
+ipv4_cidr_block: 10.240.128.0/24
+zone: us-south-3
